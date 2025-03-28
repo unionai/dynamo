@@ -291,7 +291,7 @@ elif [[ $FRAMEWORK == "NONE" ]]; then
 fi
 
 if [[ $FRAMEWORK == "VLLM" ]]; then
-    NIXL_DIR="/tmp/nixl/nixl_src"
+    NIXL_DIR="${NIXL_DIR:-/tmp/nixl/nixl_src}"
 
     # Clone original NIXL to temp directory
     if [ -d "$NIXL_DIR" ]; then
@@ -309,11 +309,11 @@ if [[ $FRAMEWORK == "VLLM" ]]; then
     fi
 
     cd "$NIXL_DIR"
-    if ! git checkout ${NIXL_COMMIT}; then
-        echo "ERROR: Failed to checkout NIXL commit ${NIXL_COMMIT}. The cached directory may be out of date."
-        echo "Please delete $NIXL_DIR and re-run the build script."
-        exit 1
-    fi
+    # if ! git checkout ${NIXL_COMMIT}; then
+    #     echo "ERROR: Failed to checkout NIXL commit ${NIXL_COMMIT}. The cached directory may be out of date."
+    #     echo "Please delete $NIXL_DIR and re-run the build script."
+    #     exit 1
+    # fi
 
     BUILD_CONTEXT_ARG+=" --build-context nixl=$NIXL_DIR"
 

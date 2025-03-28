@@ -29,6 +29,15 @@ spec:
       labels:
         app: {{ $.Release.Name }}-{{ .name | lower }}
     spec:
+      tolerations:
+      {{- if .config.resources.gpu }}
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Exists
+      {{- end }}
+      - effect: NoSchedule
+        key: flyte.org/node-role
+        operator: Exists
       # pull secrets
       imagePullSecrets:
       {{- range $.Values.imagePullSecrets }}
@@ -49,6 +58,9 @@ spec:
             cpu: "{{ .config.resources.cpu }}"
           limits:
             cpu: "{{ .config.resources.cpu }}"
+            {{- if .config.resources.gpu }}
+            nvidia.com/gpu: "{{ .config.resources.gpu }}"
+            {{- end }}
         env:
         - name: TRAFFIC_TIMEOUT
           value: "{{ .config.traffic.timeout }}"

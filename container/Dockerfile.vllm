@@ -11,10 +11,9 @@ ARG GENAI_PERF_TAG="25d0188713adc47868d6b3f22426375237a90529"
 
 FROM ${BASE_IMAGE}:${BASE_IMAGE_TAG} AS nixl_base
 WORKDIR /opt/nixl
-# Add a cache hint that only changes when the nixl commit changes
-ARG NIXL_COMMIT
+
 # This line acts as a cache key - it only changes when NIXL_COMMIT changes
-RUN echo "NIXL commit: ${NIXL_COMMIT}" > /opt/nixl/commit.txt
+RUN echo "NIXL commit: $(git rev-parse HEAD)" > /opt/nixl/commit.txt
 # Copy the nixl source
 COPY --from=nixl . .
 
@@ -140,7 +139,7 @@ COPY --from=nixl_base /opt/nixl /opt/nixl
 COPY --from=nixl_base /opt/nixl/commit.txt /opt/nixl/commit.txt
 RUN cd /opt/nixl && \
     mkdir build && \
-    meson setup build/ --prefix=/usr/local/nixl && \
+    meson setup build/ -Dbuildtype=release --prefix=/usr/local/nixl && \
     cd build/ && \
     ninja && \
     ninja install
@@ -396,3 +395,106 @@ COPY ./examples examples/
 
 ENTRYPOINT [ "/usr/bin/bash" ]
 CMD []
+
+
+###################################
+########## Union Images ###########
+###################################
+
+FROM ${RUNTIME_IMAGE}:${RUNTIME_IMAGE_TAG} AS union-base
+
+ENV DEBCONF_NONINTERACTIVE_SEEN=true
+ENV DEBIAN_FRONTEND=noninteractive
+ENV UNION_HOME=/union
+ENV VIRTUAL_ENV=${UNION_HOME}/lib/venv
+ENV PATH=${VIRTUAL_ENV}/bin:${UNION_HOME}/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
+ENV LD_LIBRARY_PATH="/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}"
+
+# Copy configuration
+RUN cat <<EOF > /etc/apt/apt.conf
+APT {
+    Install-Recommends "false";
+    Get {
+        Assume-Yes "true";
+    }
+}
+
+DPkg::Post-Invoke { "rm -rf /var/lib/apt/lists/*" };
+EOF
+
+# Install core packages
+RUN apt-get update && apt-get install ca-certificates tini
+
+# Create nonroot account
+RUN groupadd --gid 65532 nonroot \
+    && useradd --no-log-init --create-home \
+        --uid 65532 \
+        --gid 65532 \
+        --shell /sbin/nologin \
+        nonroot
+
+# Create directories
+RUN mkdir -p ${UNION_HOME}/bin ${UNION_HOME}/lib ${UNION_HOME}/share
+
+# Set entrypoint
+ENTRYPOINT [ "/usr/bin/tini", "-g", "--" ]
+
+
+FROM union-base AS union-dev
+
+# Probably should pin this to patch version, and bump with renovate or something
+ARG PYTHON_VERSION=3.12
+
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_INSTALL_DIR=${UNION_HOME}/bin
+ENV UV_PROJECT_ENVIRONMENT=${VIRTUAL_ENV}
+ENV UV_PYTHON_DOWNLOADS=manual
+ENV UV_PYTHON_INSTALL_DIR=${UNION_HOME}/share/python
+
+# Install development tools
+RUN apt-get update && apt-get install build-essential curl git make
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install Python
+RUN uv python install ${PYTHON_VERSION}
+RUN sh -c "echo ${UV_PYTHON_INSTALL_DIR}/*/lib > /etc/ld.so.conf.d/python.conf" \
+    && ldconfig
+
+# Set up virtual environment
+RUN uv venv --no-project ${VIRTUAL_ENV}
+
+
+FROM union-base AS union-python
+
+COPY --from=union-dev ${UNION_HOME}/share/python ${UNION_HOME}/share/python
+COPY --from=union-dev /etc/ld.so.conf.d/python.conf /etc/ld.so.conf.d/python.conf
+RUN ldconfig
+
+
+FROM union-dev AS union-builder
+
+# Install wheels
+RUN --mount=type=bind,source=/workspace/dist,from=build,target=/wheels \
+     uv pip install --no-cache ai-dynamo[vllm] --find-links /wheels
+
+
+FROM union-python AS union-runtime
+
+ENV PYTHONPATH="/usr/local/nixl/lib/python3/dist-packages:${PYTHONPATH}"
+ENV NIXL_PLUGIN_DIR="/usr/local/nixl/lib/x86_64-linux-gnu/plugins"
+ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
+
+COPY --from=build /opt/dynamo/bindings /opt/dynamo/bindings
+COPY --from=build /opt/nixl /opt/nixl
+COPY --from=build /usr/local/nixl /usr/local/nixl
+RUN cat <<EOF > /etc/ld.so.conf.d/nixl.conf
+/usr/local/nixl/lib/x86_64-linux-gnu
+/usr/local/nixl/lib/x86_64-linux-gnu/plugins
+EOF
+COPY --from=build /usr/local/ucx /usr/local/ucx
+RUN echo /usr/local/ucx/lib > /etc/ld.so.conf.d/ucx.conf
+RUN echo /usr/local/cuda/compat > /etc/ld.so.conf.d/cuda.conf
+RUN ldconfig
+COPY --from=union-builder ${VIRTUAL_ENV}/ ${VIRTUAL_ENV}/
+
+WORKDIR /workspace
