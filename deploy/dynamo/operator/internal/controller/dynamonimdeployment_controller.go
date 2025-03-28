@@ -379,19 +379,19 @@ func (r *DynamoNimDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.
 		modified = true
 	}
 
-	// create or update api-server ingresses
-	modified_, err = r.createOrUpdateIngresses(ctx, createOrUpdateIngressOption{
-		yataiClient:         yataiClient,
-		dynamoNimDeployment: dynamoNimDeployment,
-		dynamoNim:           dynamoNimCR,
-	})
-	if err != nil {
-		return
-	}
+	// // create or update api-server ingresses
+	// modified_, err = r.createOrUpdateIngresses(ctx, createOrUpdateIngressOption{
+	// 	yataiClient:         yataiClient,
+	// 	dynamoNimDeployment: dynamoNimDeployment,
+	// 	dynamoNim:           dynamoNimCR,
+	// })
+	// if err != nil {
+	// 	return
+	// }
 
-	if modified_ {
-		modified = true
-	}
+	// if modified_ {
+	// 	modified = true
+	// }
 
 	if yataiClient != nil && clusterName != nil {
 		yataiClient_ := *yataiClient
@@ -3017,8 +3017,8 @@ func (r *DynamoNimDeploymentReconciler) SetupWithManager(mgr ctrl.Manager) error
 		For(&v1alpha1.DynamoNimDeployment{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&appsv1.Deployment{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.Service{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Owns(&networkingv1beta1.VirtualService{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Owns(&networkingv1.Ingress{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		// Owns(&networkingv1beta1.VirtualService{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		// Owns(&networkingv1.Ingress{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.PersistentVolumeClaim{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&v1alpha1.DynamoNimRequest{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, dynamoNimRequest client.Object) []reconcile.Request {
 			reqs := make([]reconcile.Request, 0)
