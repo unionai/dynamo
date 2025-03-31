@@ -582,33 +582,28 @@ pub async fn collect_endpoints(
 
 /// Extract metrics from endpoints
 pub fn extract_metrics(endpoints: &[EndpointInfo]) -> Vec<ForwardPassMetrics> {
-    let endpoint_data = endpoints.iter().map(|e| e.data.clone()).collect::<Vec<_>>();
-
-    // Extract StatsWithData objects from endpoint services
-    let stats: Vec<StatsWithData> = endpoint_data
+    // Extract metrics directly from the data field
+    let metrics: Vec<ForwardPassMetrics> = endpoints
         .iter()
         .filter_map(|e| {
-            let metrics_data = e.as_ref()?;
-            metrics_data.clone().decode::<StatsWithData>().ok()
+            let metrics_obj = e.data.as_ref()?;
+            // Extract the 'data' field which contains the ForwardPassMetrics
+            match &metrics_obj.data {
+                serde_json::Value::Object(obj) => {
+                    // Attempt to deserialize the inner data directly
+                    match serde_json::from_value::<ForwardPassMetrics>(serde_json::Value::Object(obj.clone())) {
+                        Ok(metrics) => Some(metrics),
+                        Err(err) => {
+                            tracing::warn!("Error decoding ForwardPassMetrics: {}", err);
+                            None
+                        }
+                    }
+                },
+                _ => None
+            }
         })
         .collect();
-    tracing::debug!("Stats: {stats:?}");
-
-    // Extract ForwardPassMetrics nested within Stats object
-    let metrics: Vec<ForwardPassMetrics> = stats
-        .iter()
-        .filter_map(
-            |s| match serde_json::from_value::<ForwardPassMetrics>(s.data.clone()) {
-                Ok(metrics) => Some(metrics),
-                Err(err) => {
-                    tracing::warn!("Error decoding metrics: {err}");
-                    None
-                }
-            },
-        )
-        .collect();
-    tracing::debug!("Metrics: {metrics:?}");
-
+    tracing::debug!("Extracted ForwardPassMetrics: {metrics:?}");
     metrics
 }
 
