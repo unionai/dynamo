@@ -19,9 +19,9 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
-	"dario.cat/mergo"
 	"emperror.dev/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,7 +37,6 @@ import (
 
 	nvidiacomv1alpha1 "github.com/ai-dynamo/dynamo/deploy/dynamo/operator/api/v1alpha1"
 	commonController "github.com/ai-dynamo/dynamo/deploy/dynamo/operator/internal/controller_common"
-	"github.com/ai-dynamo/dynamo/deploy/dynamo/operator/internal/nim"
 )
 
 const (
@@ -106,55 +105,60 @@ func (r *DynamoDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		logger.Info("Reconciliation done")
 	}()
 
-	// fetch the DynamoNIMConfig
-	dynamoNIMConfig, err := nim.GetDynamoNIMConfig(ctx, dynamoDeployment, r.getSecret, r.Recorder)
-	if err != nil {
-		reason = "failed_to_get_the_DynamoNIMConfig"
-		return ctrl.Result{}, err
-	}
+	// // fetch the DynamoNIMConfig
+	// dynamoNIMConfig, err := nim.GetDynamoNIMConfig(ctx, dynamoDeployment, r.getSecret, r.Recorder)
+	// if err != nil {
+	// 	reason = "failed_to_get_the_DynamoNIMConfig"
+	// 	return ctrl.Result{}, err
+	// }
 
-	// generate the DynamoNimDeployments from the config
-	dynamoNimDeployments, err := nim.GenerateDynamoNIMDeployments(dynamoDeployment, dynamoNIMConfig)
-	if err != nil {
-		reason = "failed_to_generate_the_DynamoNimDeployments"
-		return ctrl.Result{}, err
-	}
+	// // generate the DynamoNimDeployments from the config
+	// dynamoNimDeployments, err := nim.GenerateDynamoNIMDeployments(dynamoDeployment, dynamoNIMConfig)
+	// if err != nil {
+	// 	reason = "failed_to_generate_the_DynamoNimDeployments"
+	// 	return ctrl.Result{}, err
+	// }
 
-	// merge the DynamoNimDeployments with the DynamoNimDeployments from the CRD
-	for serviceName, deployment := range dynamoNimDeployments {
-		if _, ok := dynamoDeployment.Spec.Services[serviceName]; ok {
-			err := mergo.Merge(deployment, dynamoDeployment.Spec.Services[serviceName], mergo.WithOverride)
-			if err != nil {
-				reason = "failed_to_merge_the_DynamoNimDeployments"
-				return ctrl.Result{}, err
-			}
-		}
-	}
+	// // merge the DynamoNimDeployments with the DynamoNimDeployments from the CRD
+	// for serviceName, deployment := range dynamoNimDeployments {
+	// 	if _, ok := dynamoDeployment.Spec.Services[serviceName]; ok {
+	// 		err := mergo.Merge(deployment, dynamoDeployment.Spec.Services[serviceName], mergo.WithOverride)
+	// 		if err != nil {
+	// 			reason = "failed_to_merge_the_DynamoNimDeployments"
+	// 			return ctrl.Result{}, err
+	// 		}
+	// 	}
+	// }
 
 	// reconcile the dynamoNimRequest
-	dynamoNimRequest := &nvidiacomv1alpha1.DynamoNimRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      strings.ReplaceAll(dynamoDeployment.Spec.DynamoNim, ":", "--"),
-			Namespace: dynamoDeployment.Namespace,
-		},
-		Spec: nvidiacomv1alpha1.DynamoNimRequestSpec{
-			BentoTag: dynamoDeployment.Spec.DynamoNim,
-		},
-	}
-	if err := ctrl.SetControllerReference(dynamoDeployment, dynamoNimRequest, r.Scheme); err != nil {
-		reason = "failed_to_set_the_controller_reference_for_the_DynamoNimRequest"
-		return ctrl.Result{}, err
-	}
-	_, err = commonController.SyncResource(ctx, r.Client, dynamoNimRequest, types.NamespacedName{Name: dynamoNimRequest.Name, Namespace: dynamoNimRequest.Namespace}, true)
-	if err != nil {
-		reason = "failed_to_sync_the_DynamoNimRequest"
-		return ctrl.Result{}, err
-	}
+	// dynamoNimRequest := &nvidiacomv1alpha1.DynamoNimRequest{
+	// 	ObjectMeta: metav1.ObjectMeta{
+	// 		Name:      strings.ReplaceAll(dynamoDeployment.Spec.DynamoNim, ":", "--"),
+	// 		Namespace: dynamoDeployment.Namespace,
+	// 	},
+	// 	Spec: nvidiacomv1alpha1.DynamoNimRequestSpec{
+	// 		BentoTag: dynamoDeployment.Spec.DynamoNim,
+	// 	},
+	// }
+	// if err := ctrl.SetControllerReference(dynamoDeployment, dynamoNimRequest, r.Scheme); err != nil {
+	// 	reason = "failed_to_set_the_controller_reference_for_the_DynamoNimRequest"
+	// 	return ctrl.Result{}, err
+	// }
+	// _, err = commonController.SyncResource(ctx, r.Client, dynamoNimRequest, types.NamespacedName{Name: dynamoNimRequest.Name, Namespace: dynamoNimRequest.Namespace}, true)
+	// if err != nil {
+	// 	reason = "failed_to_sync_the_DynamoNimRequest"
+	// 	return ctrl.Result{}, err
+	// }
+
+	dynamoNimDeployments := dynamoDeployment.Spec.Services
 
 	allAreReady := true
 	// reconcile the DynamoNimDeployments
-	for serviceName, dynamoNimDeployment := range dynamoNimDeployments {
-		logger.Info("Reconciling the DynamoNimDeployment", "serviceName", serviceName, "dynamoNimDeployment", dynamoNimDeployment)
+	for serviceName, origDynamoNimDeployment := range dynamoNimDeployments {
+		logger.Info("Reconciling the DynamoNimDeployment", "serviceName", serviceName, "dynamoNimDeployment", origDynamoNimDeployment)
+		dynamoNimDeployment := origDynamoNimDeployment.DeepCopy()                                                       // make a copy to avoid mutating the original object in the loop
+		dynamoNimDeployment.ObjectMeta.Name = strings.ToLower(fmt.Sprintf("%s-%s", dynamoDeployment.Name, serviceName)) // ensure unique name for each deployment
+		dynamoNimDeployment.ObjectMeta.Namespace = dynamoDeployment.Namespace                                           // ensure the same namespace as the DynamoDeployment
 		if err := ctrl.SetControllerReference(dynamoDeployment, dynamoNimDeployment, r.Scheme); err != nil {
 			reason = "failed_to_set_the_controller_reference_for_the_DynamoNimDeployment"
 			return ctrl.Result{}, err
@@ -176,7 +180,6 @@ func (r *DynamoDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	return ctrl.Result{}, nil
-
 }
 
 func (r *DynamoDeploymentReconciler) getSecret(ctx context.Context, namespace, name string) (*corev1.Secret, error) {

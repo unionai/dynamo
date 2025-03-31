@@ -195,11 +195,13 @@ func (r *DynamoNimDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.
 		}
 	}()
 
-	yataiClient, clusterName, err := r.getYataiClientWithAuth(ctx, dynamoNimDeployment)
-	if err != nil {
-		err = errors.Wrap(err, "get yatai client with auth")
-		return
-	}
+	// yataiClient, clusterName, err := r.getYataiClientWithAuth(ctx, dynamoNimDeployment)
+	// if err != nil {
+	// 	err = errors.Wrap(err, "get yatai client with auth")
+	// 	return
+	// }
+	var yataiClient **yataiclient.YataiClient
+	var clusterName *string
 
 	dynamoNimFoundCondition := meta.FindStatusCondition(dynamoNimDeployment.Status.Conditions, v1alpha1.DynamoDeploymentConditionTypeDynamoNimFound)
 	if dynamoNimFoundCondition != nil && dynamoNimFoundCondition.Status == metav1.ConditionUnknown {
@@ -1667,15 +1669,18 @@ func (r *DynamoNimDeploymentReconciler) generatePodTemplateSpec(ctx context.Cont
 			Value: fmt.Sprintf("%d", containerPort),
 		},
 		{
-			Name:  commonconsts.EnvYataiDeploymentUID,
+			// Name:  commonconsts.EnvYataiDeploymentUID,
+			Name:  "DYNAMO_UID",
 			Value: string(opt.dynamoNimDeployment.UID),
 		},
 		{
-			Name:  commonconsts.EnvYataiBentoDeploymentName,
+			// Name:  commonconsts.EnvYataiBentoDeploymentName,
+			Name:  "DYNAMO_NAME",
 			Value: opt.dynamoNimDeployment.Name,
 		},
 		{
-			Name:  commonconsts.EnvYataiBentoDeploymentNamespace,
+			// Name:  commonconsts.EnvYataiBentoDeploymentNamespace,
+			Name:  "DYNAMO_NAMESPACE",
 			Value: opt.dynamoNimDeployment.Namespace,
 		},
 	}
@@ -1784,7 +1789,10 @@ monitoring.options.insecure=true`
 
 	args := make([]string, 0)
 
-	args = append(args, "cd", "src", "&&", "uv", "run", "dynamo", "serve")
+	args = append(args, "uv", "run", "dynamo", "start")
+	if opt.dynamoNimDeployment.Spec.ServiceName != "" {
+		args = append(args, []string{"--service-name", opt.dynamoNimDeployment.Spec.ServiceName, fmt.Sprintf("graphs.disagg_router:%s", opt.dynamoNimDeployment.Spec.ServiceName), "-f", "configs/disagg_router.yaml"}...)
+	}
 
 	// todo : remove this line when https://github.com/ai-dynamo/dynamo/issues/345 is fixed
 	enableDependsOption := false
@@ -2015,176 +2023,179 @@ monitoring.options.insecure=true`
 		SecurityContext: securityContext,
 	})
 
-	lastPort++
-	proxyPort := lastPort
+	needProxyContainer := false
+	if needProxyContainer {
+		lastPort++
+		proxyPort := lastPort
 
-	proxyResourcesRequestsCPUStr := resourceAnnotations[KubeAnnotationYataiProxySidecarResourcesRequestsCPU]
-	if proxyResourcesRequestsCPUStr == "" {
-		proxyResourcesRequestsCPUStr = "100m"
-	}
-	var proxyResourcesRequestsCPU resource.Quantity
-	proxyResourcesRequestsCPU, err = resource.ParseQuantity(proxyResourcesRequestsCPUStr)
-	if err != nil {
-		err = errors.Wrapf(err, "failed to parse proxy sidecar resources requests cpu: %s", proxyResourcesRequestsCPUStr)
-		return nil, err
-	}
-	proxyResourcesRequestsMemoryStr := resourceAnnotations[KubeAnnotationYataiProxySidecarResourcesRequestsMemory]
-	if proxyResourcesRequestsMemoryStr == "" {
-		proxyResourcesRequestsMemoryStr = "200Mi"
-	}
-	var proxyResourcesRequestsMemory resource.Quantity
-	proxyResourcesRequestsMemory, err = resource.ParseQuantity(proxyResourcesRequestsMemoryStr)
-	if err != nil {
-		err = errors.Wrapf(err, "failed to parse proxy sidecar resources requests memory: %s", proxyResourcesRequestsMemoryStr)
-		return nil, err
-	}
-	proxyResourcesLimitsCPUStr := resourceAnnotations[KubeAnnotationYataiProxySidecarResourcesLimitsCPU]
-	if proxyResourcesLimitsCPUStr == "" {
-		proxyResourcesLimitsCPUStr = "300m"
-	}
-	var proxyResourcesLimitsCPU resource.Quantity
-	proxyResourcesLimitsCPU, err = resource.ParseQuantity(proxyResourcesLimitsCPUStr)
-	if err != nil {
-		err = errors.Wrapf(err, "failed to parse proxy sidecar resources limits cpu: %s", proxyResourcesLimitsCPUStr)
-		return nil, err
-	}
-	proxyResourcesLimitsMemoryStr := resourceAnnotations[KubeAnnotationYataiProxySidecarResourcesLimitsMemory]
-	if proxyResourcesLimitsMemoryStr == "" {
-		proxyResourcesLimitsMemoryStr = "1000Mi"
-	}
-	var proxyResourcesLimitsMemory resource.Quantity
-	proxyResourcesLimitsMemory, err = resource.ParseQuantity(proxyResourcesLimitsMemoryStr)
-	if err != nil {
-		err = errors.Wrapf(err, "failed to parse proxy sidecar resources limits memory: %s", proxyResourcesLimitsMemoryStr)
-		return nil, err
-	}
-	var envoyConfigContent string
-	if opt.isStealingTrafficDebugModeEnabled {
-		productionServiceName := r.getServiceName(opt.dynamoNimDeployment, opt.dynamoNim, false)
-		envoyConfigContent, err = envoy.GenerateEnvoyConfigurationContent(envoy.CreateEnvoyConfig{
-			ListenPort:              proxyPort,
-			DebugHeaderName:         HeaderNameDebug,
-			DebugHeaderValue:        commonconsts.KubeLabelValueTrue,
-			DebugServerAddress:      "localhost",
-			DebugServerPort:         containerPort,
-			ProductionServerAddress: fmt.Sprintf("%s.%s.svc.cluster.local", productionServiceName, opt.dynamoNimDeployment.Namespace),
-			ProductionServerPort:    ServicePortHTTPNonProxy,
+		proxyResourcesRequestsCPUStr := resourceAnnotations[KubeAnnotationYataiProxySidecarResourcesRequestsCPU]
+		if proxyResourcesRequestsCPUStr == "" {
+			proxyResourcesRequestsCPUStr = "100m"
+		}
+		var proxyResourcesRequestsCPU resource.Quantity
+		proxyResourcesRequestsCPU, err = resource.ParseQuantity(proxyResourcesRequestsCPUStr)
+		if err != nil {
+			err = errors.Wrapf(err, "failed to parse proxy sidecar resources requests cpu: %s", proxyResourcesRequestsCPUStr)
+			return nil, err
+		}
+		proxyResourcesRequestsMemoryStr := resourceAnnotations[KubeAnnotationYataiProxySidecarResourcesRequestsMemory]
+		if proxyResourcesRequestsMemoryStr == "" {
+			proxyResourcesRequestsMemoryStr = "200Mi"
+		}
+		var proxyResourcesRequestsMemory resource.Quantity
+		proxyResourcesRequestsMemory, err = resource.ParseQuantity(proxyResourcesRequestsMemoryStr)
+		if err != nil {
+			err = errors.Wrapf(err, "failed to parse proxy sidecar resources requests memory: %s", proxyResourcesRequestsMemoryStr)
+			return nil, err
+		}
+		proxyResourcesLimitsCPUStr := resourceAnnotations[KubeAnnotationYataiProxySidecarResourcesLimitsCPU]
+		if proxyResourcesLimitsCPUStr == "" {
+			proxyResourcesLimitsCPUStr = "300m"
+		}
+		var proxyResourcesLimitsCPU resource.Quantity
+		proxyResourcesLimitsCPU, err = resource.ParseQuantity(proxyResourcesLimitsCPUStr)
+		if err != nil {
+			err = errors.Wrapf(err, "failed to parse proxy sidecar resources limits cpu: %s", proxyResourcesLimitsCPUStr)
+			return nil, err
+		}
+		proxyResourcesLimitsMemoryStr := resourceAnnotations[KubeAnnotationYataiProxySidecarResourcesLimitsMemory]
+		if proxyResourcesLimitsMemoryStr == "" {
+			proxyResourcesLimitsMemoryStr = "1000Mi"
+		}
+		var proxyResourcesLimitsMemory resource.Quantity
+		proxyResourcesLimitsMemory, err = resource.ParseQuantity(proxyResourcesLimitsMemoryStr)
+		if err != nil {
+			err = errors.Wrapf(err, "failed to parse proxy sidecar resources limits memory: %s", proxyResourcesLimitsMemoryStr)
+			return nil, err
+		}
+		var envoyConfigContent string
+		if opt.isStealingTrafficDebugModeEnabled {
+			productionServiceName := r.getServiceName(opt.dynamoNimDeployment, opt.dynamoNim, false)
+			envoyConfigContent, err = envoy.GenerateEnvoyConfigurationContent(envoy.CreateEnvoyConfig{
+				ListenPort:              proxyPort,
+				DebugHeaderName:         HeaderNameDebug,
+				DebugHeaderValue:        commonconsts.KubeLabelValueTrue,
+				DebugServerAddress:      "localhost",
+				DebugServerPort:         containerPort,
+				ProductionServerAddress: fmt.Sprintf("%s.%s.svc.cluster.local", productionServiceName, opt.dynamoNimDeployment.Namespace),
+				ProductionServerPort:    ServicePortHTTPNonProxy,
+			})
+		} else {
+			debugServiceName := r.getServiceName(opt.dynamoNimDeployment, opt.dynamoNim, true)
+			envoyConfigContent, err = envoy.GenerateEnvoyConfigurationContent(envoy.CreateEnvoyConfig{
+				ListenPort:              proxyPort,
+				DebugHeaderName:         HeaderNameDebug,
+				DebugHeaderValue:        commonconsts.KubeLabelValueTrue,
+				DebugServerAddress:      fmt.Sprintf("%s.%s.svc.cluster.local", debugServiceName, opt.dynamoNimDeployment.Namespace),
+				DebugServerPort:         ServicePortHTTPNonProxy,
+				ProductionServerAddress: "localhost",
+				ProductionServerPort:    containerPort,
+			})
+		}
+		if err != nil {
+			err = errors.Wrapf(err, "failed to generate envoy configuration content")
+			return nil, err
+		}
+		envoyConfigConfigMapName := fmt.Sprintf("%s-envoy-config", kubeName)
+		envoyConfigConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      envoyConfigConfigMapName,
+				Namespace: opt.dynamoNimDeployment.Namespace,
+			},
+			Data: map[string]string{
+				"envoy.yaml": envoyConfigContent,
+			},
+		}
+		err = ctrl.SetControllerReference(opt.dynamoNimDeployment, envoyConfigConfigMap, r.Scheme)
+		if err != nil {
+			err = errors.Wrapf(err, "failed to set controller reference for envoy config config map")
+			return nil, err
+		}
+		_, err = ctrl.CreateOrUpdate(ctx, r.Client, envoyConfigConfigMap, func() error {
+			envoyConfigConfigMap.Data["envoy.yaml"] = envoyConfigContent
+			return nil
 		})
-	} else {
-		debugServiceName := r.getServiceName(opt.dynamoNimDeployment, opt.dynamoNim, true)
-		envoyConfigContent, err = envoy.GenerateEnvoyConfigurationContent(envoy.CreateEnvoyConfig{
-			ListenPort:              proxyPort,
-			DebugHeaderName:         HeaderNameDebug,
-			DebugHeaderValue:        commonconsts.KubeLabelValueTrue,
-			DebugServerAddress:      fmt.Sprintf("%s.%s.svc.cluster.local", debugServiceName, opt.dynamoNimDeployment.Namespace),
-			DebugServerPort:         ServicePortHTTPNonProxy,
-			ProductionServerAddress: "localhost",
-			ProductionServerPort:    containerPort,
-		})
-	}
-	if err != nil {
-		err = errors.Wrapf(err, "failed to generate envoy configuration content")
-		return nil, err
-	}
-	envoyConfigConfigMapName := fmt.Sprintf("%s-envoy-config", kubeName)
-	envoyConfigConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      envoyConfigConfigMapName,
-			Namespace: opt.dynamoNimDeployment.Namespace,
-		},
-		Data: map[string]string{
-			"envoy.yaml": envoyConfigContent,
-		},
-	}
-	err = ctrl.SetControllerReference(opt.dynamoNimDeployment, envoyConfigConfigMap, r.Scheme)
-	if err != nil {
-		err = errors.Wrapf(err, "failed to set controller reference for envoy config config map")
-		return nil, err
-	}
-	_, err = ctrl.CreateOrUpdate(ctx, r.Client, envoyConfigConfigMap, func() error {
-		envoyConfigConfigMap.Data["envoy.yaml"] = envoyConfigContent
-		return nil
-	})
-	if err != nil {
-		err = errors.Wrapf(err, "failed to create or update envoy config configmap")
-		return nil, err
-	}
-	volumes = append(volumes, corev1.Volume{
-		Name: "envoy-config",
-		VolumeSource: corev1.VolumeSource{
-			ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: envoyConfigConfigMapName,
-				},
-			},
-		},
-	})
-	proxyImage := "quay.io/bentoml/bentoml-proxy:0.0.1"
-	proxyImage_ := os.Getenv("INTERNAL_IMAGES_PROXY")
-	if proxyImage_ != "" {
-		proxyImage = proxyImage_
-	}
-	containers = append(containers, corev1.Container{
-		Name:  "proxy",
-		Image: proxyImage,
-		Command: []string{
-			"envoy",
-			"--config-path",
-			"/etc/envoy/envoy.yaml",
-		},
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "envoy-config",
-				MountPath: "/etc/envoy",
-			},
-		},
-		Ports: []corev1.ContainerPort{
-			{
-				Name:          ContainerPortNameHTTPProxy,
-				ContainerPort: int32(proxyPort),
-				Protocol:      corev1.ProtocolTCP,
-			},
-		},
-		ReadinessProbe: &corev1.Probe{
-			InitialDelaySeconds: 5,
-			TimeoutSeconds:      5,
-			FailureThreshold:    10,
-			ProbeHandler: corev1.ProbeHandler{
-				Exec: &corev1.ExecAction{
-					Command: []string{
-						"sh",
-						"-c",
-						"curl -s localhost:9901/server_info | grep state | grep -q LIVE",
+		if err != nil {
+			err = errors.Wrapf(err, "failed to create or update envoy config configmap")
+			return nil, err
+		}
+		volumes = append(volumes, corev1.Volume{
+			Name: "envoy-config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: envoyConfigConfigMapName,
 					},
 				},
 			},
-		},
-		LivenessProbe: &corev1.Probe{
-			InitialDelaySeconds: 5,
-			TimeoutSeconds:      5,
-			FailureThreshold:    10,
-			ProbeHandler: corev1.ProbeHandler{
-				Exec: &corev1.ExecAction{
-					Command: []string{
-						"sh",
-						"-c",
-						"curl -s localhost:9901/server_info | grep state | grep -q LIVE",
+		})
+		proxyImage := "quay.io/bentoml/bentoml-proxy:0.0.1"
+		proxyImage_ := os.Getenv("INTERNAL_IMAGES_PROXY")
+		if proxyImage_ != "" {
+			proxyImage = proxyImage_
+		}
+		containers = append(containers, corev1.Container{
+			Name:  "proxy",
+			Image: proxyImage,
+			Command: []string{
+				"envoy",
+				"--config-path",
+				"/etc/envoy/envoy.yaml",
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "envoy-config",
+					MountPath: "/etc/envoy",
+				},
+			},
+			Ports: []corev1.ContainerPort{
+				{
+					Name:          ContainerPortNameHTTPProxy,
+					ContainerPort: int32(proxyPort),
+					Protocol:      corev1.ProtocolTCP,
+				},
+			},
+			ReadinessProbe: &corev1.Probe{
+				InitialDelaySeconds: 5,
+				TimeoutSeconds:      5,
+				FailureThreshold:    10,
+				ProbeHandler: corev1.ProbeHandler{
+					Exec: &corev1.ExecAction{
+						Command: []string{
+							"sh",
+							"-c",
+							"curl -s localhost:9901/server_info | grep state | grep -q LIVE",
+						},
 					},
 				},
 			},
-		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    proxyResourcesRequestsCPU,
-				corev1.ResourceMemory: proxyResourcesRequestsMemory,
+			LivenessProbe: &corev1.Probe{
+				InitialDelaySeconds: 5,
+				TimeoutSeconds:      5,
+				FailureThreshold:    10,
+				ProbeHandler: corev1.ProbeHandler{
+					Exec: &corev1.ExecAction{
+						Command: []string{
+							"sh",
+							"-c",
+							"curl -s localhost:9901/server_info | grep state | grep -q LIVE",
+						},
+					},
+				},
 			},
-			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    proxyResourcesLimitsCPU,
-				corev1.ResourceMemory: proxyResourcesLimitsMemory,
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    proxyResourcesRequestsCPU,
+					corev1.ResourceMemory: proxyResourcesRequestsMemory,
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    proxyResourcesLimitsCPU,
+					corev1.ResourceMemory: proxyResourcesLimitsMemory,
+				},
 			},
-		},
-		SecurityContext: securityContext,
-	})
+			SecurityContext: securityContext,
+		})
+	}
 
 	if needMonitorContainer {
 		lastPort++
