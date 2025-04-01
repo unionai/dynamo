@@ -23,7 +23,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar, Union
 from _bentoml_sdk import Service, ServiceConfig
 from _bentoml_sdk.images import Image
 from _bentoml_sdk.service.config import validate
-
 from dynamo.sdk.lib.decorators import DynamoEndpoint
 
 T = TypeVar("T", bound=object)
@@ -226,6 +225,8 @@ def service(
             dynamo_config = DynamoConfig(**dynamo)
         else:
             dynamo_config = dynamo
+        # Overwrite default values with environment variables if set
+        dynamo_config.namespace = os.getenv("DYNAMO_NAMESPACE", dynamo_config.namespace)
 
     def decorator(inner: type[T]) -> DynamoService[T]:
         if isinstance(inner, Service):

@@ -92,12 +92,9 @@ class Router:
     @async_on_start
     async def async_init(self):
         self.runtime = dynamo_context["runtime"]
-        self.workers_client = (
-            await self.runtime.namespace("dynamo")
-            .component("VllmWorker")
-            .endpoint("generate")
-            .client()
-        )
+        comp_ns, comp_name = VllmWorker.dynamo_address()  # type: ignore
+        kv_listener = self.runtime.namespace(comp_ns).component(comp_name)
+        self.workers_client = await kv_listener.endpoint("generate").client()
         while len(self.workers_client.endpoint_ids()) < self.args.min_workers:
             # TODO: replace print w/ vllm_logger.info
             print(
@@ -107,7 +104,6 @@ class Router:
             )
             await asyncio.sleep(2)
 
-        kv_listener = self.runtime.namespace("dynamo").component("VllmWorker")
         await kv_listener.create_service()
         self.indexer = KvIndexer(kv_listener, self.args.block_size)
         self.metrics_aggregator = KvMetricsAggregator(kv_listener)

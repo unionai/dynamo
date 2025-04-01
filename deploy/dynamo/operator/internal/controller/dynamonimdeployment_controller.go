@@ -1668,21 +1668,18 @@ func (r *DynamoNimDeploymentReconciler) generatePodTemplateSpec(ctx context.Cont
 			Name:  commonconsts.EnvBentoServicePort,
 			Value: fmt.Sprintf("%d", containerPort),
 		},
-		{
-			// Name:  commonconsts.EnvYataiDeploymentUID,
-			Name:  "DYNAMO_UID",
-			Value: string(opt.dynamoNimDeployment.UID),
-		},
-		{
-			// Name:  commonconsts.EnvYataiBentoDeploymentName,
-			Name:  "DYNAMO_NAME",
-			Value: opt.dynamoNimDeployment.Name,
-		},
-		{
-			// Name:  commonconsts.EnvYataiBentoDeploymentNamespace,
-			Name:  "DYNAMO_NAMESPACE",
-			Value: opt.dynamoNimDeployment.Namespace,
-		},
+		// {
+		// 	Name:  commonconsts.EnvYataiDeploymentUID,
+		// 	Value: string(opt.dynamoNimDeployment.UID),
+		// },
+		// {
+		// 	Name:  commonconsts.EnvYataiBentoDeploymentName,
+		// 	Value: opt.dynamoNimDeployment.Name,
+		// },
+		// {
+		// 	Name:  commonconsts.EnvYataiBentoDeploymentNamespace,
+		// 	Value: opt.dynamoNimDeployment.Namespace,
+		// },
 	}
 
 	if r.NatsAddr != "" {
@@ -1788,11 +1785,7 @@ monitoring.options.insecure=true`
 	volumeMounts := make([]corev1.VolumeMount, 0)
 
 	args := make([]string, 0)
-
 	args = append(args, "uv", "run", "dynamo", "start")
-	if opt.dynamoNimDeployment.Spec.ServiceName != "" {
-		args = append(args, []string{"--service-name", opt.dynamoNimDeployment.Spec.ServiceName, fmt.Sprintf("graphs.disagg_router:%s", opt.dynamoNimDeployment.Spec.ServiceName), "-f", "configs/disagg_router.yaml"}...)
-	}
 
 	// todo : remove this line when https://github.com/ai-dynamo/dynamo/issues/345 is fixed
 	enableDependsOption := false

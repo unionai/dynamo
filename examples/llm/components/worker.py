@@ -59,7 +59,12 @@ class VllmWorker:
         self._prefill_queue_nats_server = os.getenv(
             "NATS_SERVER", "nats://localhost:4222"
         )
-        self._prefill_queue_stream_name = self.model_name
+        self._this_namespace, self._this_name = VllmWorker.dynamo_address()
+        self._prefill_queue_stream_name = (
+            f"{self._this_namespace}:{self.engine_args.served_model_name}"
+            if self.engine_args.served_model_name is not None
+            else self._this_namespace
+        )
         vllm_logger.info(
             f"Prefill queue: {self._prefill_queue_nats_server}:{self._prefill_queue_stream_name}"
         )
@@ -80,8 +85,8 @@ class VllmWorker:
         if self.engine_args.router == "kv":
             VLLM_WORKER_ID = dynamo_context["endpoints"][0].lease_id()
             os.environ["VLLM_WORKER_ID"] = str(VLLM_WORKER_ID)
-            os.environ["VLLM_KV_NAMESPACE"] = "dynamo"
-            os.environ["VLLM_KV_COMPONENT"] = class_name
+            os.environ["VLLM_KV_NAMESPACE"] = self._this_namespace
+            os.environ["VLLM_KV_COMPONENT"] = self._this_name
             vllm_logger.info(f"Generate endpoint ID: {VLLM_WORKER_ID}")
         self.metrics_publisher = KvMetricsPublisher()
 
@@ -117,7 +122,7 @@ class VllmWorker:
 
         if self.engine_args.remote_prefill:
             metadata = self.engine_client.nixl_metadata
-            metadata_store = NixlMetadataStore("dynamo", runtime)
+            metadata_store = NixlMetadataStore(self._this_namespace, runtime)
             await metadata_store.put(metadata.engine_id, metadata)
 
         if self.engine_args.conditional_disagg:

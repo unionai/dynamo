@@ -70,6 +70,7 @@ class PrefillWorker:
                 "Prefix caching is not supported yet in prefill worker, setting to False"
             )
             self.engine_args.enable_prefix_caching = False
+        self._this_namespace, self._this_name = PrefillWorker.dynamo_address()
 
     @async_on_start
     async def async_init(self):
@@ -82,7 +83,7 @@ class PrefillWorker:
             raise RuntimeError("Failed to initialize engine client")
         runtime = dynamo_context["runtime"]
         metadata = self.engine_client.nixl_metadata
-        self._metadata_store = NixlMetadataStore("dynamo", runtime)
+        self._metadata_store = NixlMetadataStore(self._this_namespace, runtime)
         await self._metadata_store.put(metadata.engine_id, metadata)
         task = asyncio.create_task(self.prefill_queue_handler())
 
@@ -101,9 +102,9 @@ class PrefillWorker:
         print("[DEBUG] prefill queue handler entered")
         prefill_queue_nats_server = os.getenv("NATS_SERVER", "nats://localhost:4222")
         prefill_queue_stream_name = (
-            self.engine_args.served_model_name
+            f"{self._this_namespace}:{self.engine_args.served_model_name}"
             if self.engine_args.served_model_name is not None
-            else "vllm"
+            else self._this_namespace
         )
         print(f"Prefill queue: {prefill_queue_nats_server}:{prefill_queue_stream_name}")
         self.initialized = True

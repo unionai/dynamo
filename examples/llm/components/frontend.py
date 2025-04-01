@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from dynamo.sdk import depends, service
 from dynamo.sdk.lib.config import ServiceConfig
 from dynamo.sdk.lib.image import DYNAMO_IMAGE
 
+DYNAMO_NAMESPACE = os.getenv("DYNAMO_NAMESPACE", "dynamo")
 
 def get_http_binary_path():
     sdk_path = Path(sdk.__file__)
@@ -58,6 +60,8 @@ class Frontend:
         subprocess.run(
             [
                 "llmctl",
+                "-n",
+                DYNAMO_NAMESPACE,
                 "http",
                 "remove",
                 "chat-models",
@@ -67,6 +71,8 @@ class Frontend:
         subprocess.run(
             [
                 "llmctl",
+                "-n",
+                DYNAMO_NAMESPACE,
                 "http",
                 "add",
                 "chat-models",
@@ -78,7 +84,7 @@ class Frontend:
         print("Starting HTTP server")
         http_binary = get_http_binary_path()
         process = subprocess.Popen(
-            [http_binary, "-p", str(frontend_config.port)], stdout=None, stderr=None
+            [http_binary, "-p", str(frontend_config.port), "--namespace", DYNAMO_NAMESPACE], stdout=None, stderr=None
         )
         try:
             process.wait()

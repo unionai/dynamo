@@ -484,6 +484,8 @@ ENV PYTHONPATH="/usr/local/nixl/lib/python3/dist-packages:${PYTHONPATH}"
 ENV NIXL_PLUGIN_DIR="/usr/local/nixl/lib/x86_64-linux-gnu/plugins"
 ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
 
+RUN apt-get update && apt-get install build-essential
+
 COPY --from=build /opt/dynamo/bindings /opt/dynamo/bindings
 COPY --from=build /opt/nixl /opt/nixl
 COPY --from=build /usr/local/nixl /usr/local/nixl
