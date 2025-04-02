@@ -192,6 +192,8 @@ def build_start_command() -> click.Group:
         from bentoml._internal.service.loader import load
 
         service_configs: dict[str, dict[str, t.Any]] = {}
+        if service_config_from_env := os.getenv("DYNAMO_SERVICE_CONFIG"):
+            service_configs = json.loads(service_config_from_env)
 
         # Load file if provided
         if file:
