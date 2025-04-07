@@ -37,12 +37,22 @@ use dynamo_runtime::{
 };
 use futures::stream::StreamExt;
 use std::sync::Arc;
+use std::collections::HashMap;
+use tonic::{transport::Server, Request, Response, Status};
+use externalscaler::{GetMetricSpecResponse, GetMetricsRequest, GetMetricsResponse, IsActiveResponse, MetricSpec, MetricValue, ScaledObjectRef};
+use externalscaler::external_scaler_server::{ExternalScaler, ExternalScalerServer};
+use tokio::sync::Mutex;
+use keda_scaler::KedaScaler;
 
 // Import from our library
 use metrics::{
     collect_endpoints, extract_metrics, postprocess_metrics, LLMWorkerLoadCapacityConfig,
     MetricsMode, PrometheusMetricsCollector,
 };
+
+use dynamo_llm::kv_router::scoring::ProcessedEndpoints;
+use dynamo_runtime::service::EndpointInfo;
+use dynamo_llm::kv_router::protocols::ForwardPassMetrics;
 
 /// CLI arguments for the metrics application
 #[derive(Parser, Debug)]
@@ -216,6 +226,17 @@ async fn app(runtime: Runtime) -> Result<()> {
                 tracing::error!("Failed to subscribe to KV hit rate events: {:?}", e);
             }
         }
+    });
+
+    // Start the KEDA scaler server
+    let keda_scaler = KedaScaler::new(&metrics_collector);
+    let scaler_server = keda_scaler.into_server();
+    tokio::spawn(async move {
+        Server::builder()
+            .add_service(scaler_server)
+            .serve(([0, 0, 0, 0], 50051).into())
+            .await
+            .expect("Failed to start gRPC server");
     });
 
     loop {

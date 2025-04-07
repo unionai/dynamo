@@ -39,3 +39,8 @@ tracing = { workspace = true }
 axum = { version = "0.6" }
 clap = { version = "4.5", features = ["derive", "env"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Add dependencies for KEDA scaler
+externalscaler = { path = "../metrics-keda" }
+tonic = { version = "0.7", features = ["transport"] }
+tokio-stream = { version = "0.1" }
