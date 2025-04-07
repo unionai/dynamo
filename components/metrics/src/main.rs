@@ -37,12 +37,7 @@ use dynamo_runtime::{
 };
 use futures::stream::StreamExt;
 use std::sync::Arc;
-use std::collections::HashMap;
-use tonic::{transport::Server, Request, Response, Status};
-use externalscaler::{GetMetricSpecResponse, GetMetricsRequest, GetMetricsResponse, IsActiveResponse, MetricSpec, MetricValue, ScaledObjectRef};
-use externalscaler::external_scaler_server::{ExternalScaler, ExternalScalerServer};
-use tokio::sync::Mutex;
-use keda_scaler::KedaScaler;
+use tonic::transport::Server;
 
 // Import from our library
 use metrics::{
@@ -50,9 +45,9 @@ use metrics::{
     MetricsMode, PrometheusMetricsCollector,
 };
 
-use dynamo_llm::kv_router::scoring::ProcessedEndpoints;
-use dynamo_runtime::service::EndpointInfo;
-use dynamo_llm::kv_router::protocols::ForwardPassMetrics;
+use crate::keda::KedaScaler;
+
+mod keda;
 
 /// CLI arguments for the metrics application
 #[derive(Parser, Debug)]
@@ -229,7 +224,7 @@ async fn app(runtime: Runtime) -> Result<()> {
     });
 
     // Start the KEDA scaler server
-    let keda_scaler = KedaScaler::new(&metrics_collector);
+    let keda_scaler = KedaScaler::new(metrics_collector);
     let scaler_server = keda_scaler.into_server();
     tokio::spawn(async move {
         Server::builder()
