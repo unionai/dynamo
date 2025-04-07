@@ -41,13 +41,9 @@ use tonic::transport::Server;
 
 // Import from our library
 use metrics::{
-    collect_endpoints, extract_metrics, postprocess_metrics, LLMWorkerLoadCapacityConfig,
-    MetricsMode, PrometheusMetricsCollector,
+    collect_endpoints, extract_metrics, keda::KedaScaler, postprocess_metrics,
+    LLMWorkerLoadCapacityConfig, MetricsMode, PrometheusMetricsCollector,
 };
-
-use crate::keda::KedaScaler;
-
-mod keda;
 
 /// CLI arguments for the metrics application
 #[derive(Parser, Debug)]
@@ -223,8 +219,18 @@ async fn app(runtime: Runtime) -> Result<()> {
         }
     });
 
-    // Start the KEDA scaler server
-    let keda_scaler = KedaScaler::new(metrics_collector);
+    // Get an Arc reference to the PrometheusMetrics instance
+    let metrics_ref = {
+        let collector = metrics_collector.lock().await;
+        Arc::new(collector.get_metrics().clone())
+    };
+
+    // Start the KEDA scaler server with direct access to metrics
+    let keda_scaler = KedaScaler::new(
+        metrics_ref,
+        config.component_name.clone(),
+        config.endpoint_name.clone(),
+    );
     let scaler_server = keda_scaler.into_server();
     tokio::spawn(async move {
         Server::builder()

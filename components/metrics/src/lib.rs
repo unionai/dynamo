@@ -91,6 +91,9 @@ use dynamo_runtime::{
     distributed::Component, error, service::EndpointInfo, utils::Duration, Result,
 };
 
+// Export the KEDA module
+pub mod keda;
+
 /// Configuration for metrics collection mode
 #[derive(Debug, Clone)]
 pub enum MetricsMode {
@@ -179,6 +182,11 @@ impl PrometheusMetricsCollector {
             mode: None,
             shutdown_tx: None,
         })
+    }
+
+    /// Get a reference to the metrics
+    pub fn get_metrics(&self) -> &PrometheusMetrics {
+        &self.metrics
     }
 
     /// Start metrics collection with the specified mode
@@ -354,13 +362,14 @@ impl PrometheusMetricsCollector {
 }
 
 /// Prometheus metrics collection
+#[derive(Clone)]
 pub struct PrometheusMetrics {
     kv_blocks_active: prometheus::GaugeVec,
     kv_blocks_total: prometheus::GaugeVec,
     requests_active: prometheus::GaugeVec,
     requests_total: prometheus::GaugeVec,
-    load_avg: prometheus::GaugeVec,
-    load_std: prometheus::GaugeVec,
+    pub load_avg: prometheus::GaugeVec,
+    pub load_std: prometheus::GaugeVec,
     // KV hit rate metrics
     kv_hit_rate_percent: prometheus::GaugeVec,
     // FIXME: These are currently unused outside of mock_worker

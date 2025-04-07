@@ -1,19 +1,31 @@
-use std::collections::HashMap;
+use tonic::{Request, Response, Status};
+use crate::PrometheusMetrics;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tonic::{transport::Server, Request, Response, Status};
-use crate::proto::externalscaler::{GetMetricSpecResponse, GetMetricsRequest, GetMetricsResponse, IsActiveResponse, MetricSpec, MetricValue, ScaledObjectRef};
-use crate::proto::externalscaler::external_scaler_server::{ExternalScaler, ExternalScalerServer};
-use metrics::PrometheusMetricsCollector;
+
+// Include the proto module directly in keda.rs
+pub mod proto {
+    pub mod externalscaler {
+        tonic::include_proto!("externalscaler");
+    }
+}
+
+use self::proto::externalscaler::{GetMetricSpecResponse, GetMetricsRequest, GetMetricsResponse, IsActiveResponse, MetricSpec, MetricValue, ScaledObjectRef};
+use self::proto::externalscaler::external_scaler_server::{ExternalScaler, ExternalScalerServer};
 
 // KEDA External Scaler
 pub struct KedaScaler {
-    metrics_collector: Arc<Mutex<PrometheusMetricsCollector>>,
+    metrics: Arc<PrometheusMetrics>,
+    component_name: String,
+    endpoint_name: String,
 }
 
 impl KedaScaler {
-    pub fn new(metrics_collector: Arc<Mutex<PrometheusMetricsCollector>>) -> Self {
-        Self { metrics_collector }
+    pub fn new(metrics: Arc<PrometheusMetrics>, component_name: String, endpoint_name: String) -> Self {
+        Self {
+            metrics,
+            component_name,
+            endpoint_name,
+        }
     }
 
     pub fn into_server(self) -> ExternalScalerServer<KedaScaler> {
@@ -21,10 +33,13 @@ impl KedaScaler {
     }
 
     async fn get_current_metrics(&self) -> Result<f64, Status> {
-        // Retrieve the llm_load_avg metric from the metrics_collector
-        let collector = self.metrics_collector.lock().await;
-        // Placeholder for actual metric retrieval logic
-        Ok(0.0) // Replace with actual logic to get llm_load_avg
+        // Directly access the load_avg metric using the component and endpoint names
+        let value = self.metrics.load_avg
+            .with_label_values(&[&self.component_name, &self.endpoint_name])
+            .get();
+
+        tracing::debug!("Current load_avg metric: {}", value);
+        Ok(value)
     }
 }
 
@@ -96,7 +111,7 @@ impl ExternalScaler for KedaScaler {
         let request = request.get_ref();
         let metric_name_str = &request.metric_name;
         let load_avg = self.get_current_metrics().await?;
-        let metric_values = match metric_name_str {
+        let metric_values = match metric_name_str.as_str() {
             "llm_load_avg" => {
                 vec![MetricValue {
                     metric_name: "llm_load_avg".to_string(),

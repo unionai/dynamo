@@ -41,5 +41,9 @@ clap = { version = "4.5", features = ["derive", "env"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Add dependencies for KEDA scaler
-tonic = { version = "0.7", features = ["transport"] }
+tonic = { version = "0.7.2", features = ["transport"] }
+prost = "0.10.4"
 tokio-stream = { version = "0.1" }
+
+[build-dependencies]
+tonic-build = "0.7.2"
