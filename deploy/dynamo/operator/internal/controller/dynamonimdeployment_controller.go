@@ -358,15 +358,15 @@ func (r *DynamoNimDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.
 		modified = true
 	}
 
-	// create or update api-server hpa
-	modified_, err = r.createOrUpdateHPA(ctx, dynamoNimDeployment, dynamoNimCR)
-	if err != nil {
-		return
-	}
+	// // create or update api-server hpa
+	// modified_, err = r.createOrUpdateHPA(ctx, dynamoNimDeployment, dynamoNimCR)
+	// if err != nil {
+	// 	return
+	// }
 
-	if modified_ {
-		modified = true
-	}
+	// if modified_ {
+	// 	modified = true
+	// }
 
 	// create or update api-server service
 	modified_, err = r.createOrUpdateOrDeleteServices(ctx, createOrUpdateOrDeleteServicesOption{
