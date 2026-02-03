@@ -23,7 +23,7 @@ mypy
 numpy
 opentelemetry-api
 opentelemetry-sdk
-pip==25.0.1
+pip==26.0
 pre-commit
 protobuf==5.27.3
 pydantic==2.7.1
